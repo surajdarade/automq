@@ -62,6 +62,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -135,7 +136,7 @@ public class SnapshotReadPartitionsManagerTest {
             }
         };
 
-        manager = new SnapshotReadPartitionsManager(config, time, replicaManager, metadataCache, replayer, asyncSender);
+        manager = new SnapshotReadPartitionsManager(config, time, null, replicaManager, metadataCache, replayer, asyncSender);
     }
 
     @Test
@@ -152,10 +153,8 @@ public class SnapshotReadPartitionsManagerTest {
         operationBatch.operations.add(snapshotWithOperation(2, Map.of(4L, 6L), SnapshotOperation.ADD));
         subscriber.onNewOperationBatch(operationBatch);
 
-        subscriber.unsafeRun();
-
-        verify(dataLoader, times(1)).replayWal();
-
+        subscriber.run();
+        verify(dataLoader, timeout(1000L).times(1)).replayWal();
         awaitEventLoopClear();
 
         assertEquals(2, subscriber.partitions.size());

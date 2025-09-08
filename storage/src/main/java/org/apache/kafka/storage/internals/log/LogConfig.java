@@ -42,7 +42,10 @@ import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.config.ServerTopicConfigSynonyms;
 import org.apache.kafka.server.record.BrokerCompressionType;
+import org.apache.kafka.server.record.ErrorsTolerance;
+import org.apache.kafka.server.record.TableTopicConvertType;
 import org.apache.kafka.server.record.TableTopicSchemaType;
+import org.apache.kafka.server.record.TableTopicTransformType;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -71,6 +74,11 @@ import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
 import static org.apache.kafka.server.common.MetadataVersion.IBP_3_0_IV1;
+import static org.apache.kafka.server.record.TableTopicConvertType.BY_LATEST_SCHEMA;
+import static org.apache.kafka.server.record.TableTopicConvertType.BY_SCHEMA_ID;
+import static org.apache.kafka.server.record.TableTopicConvertType.RAW;
+import static org.apache.kafka.server.record.TableTopicTransformType.FLATTEN_DEBEZIUM;
+import static org.apache.kafka.server.record.TableTopicTransformType.NONE;
 
 public class LogConfig extends AbstractConfig {
 
@@ -337,13 +345,19 @@ public class LogConfig extends AbstractConfig {
                 // dynamic config #validateNames check will check the old configs name validity
                 .define("elasticstream.replication.factor", INT, 1, atLeast(1), LOW, "deprecated, should not remove for compatibility")
                 .define(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_ENABLE_DOC)
-                .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(5), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
+                .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(1), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
-                .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.SCHEMALESS.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
+                .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.NONE.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, STRING, TableTopicConvertType.STRING.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, STRING, NONE.name, in(TableTopicTransformType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG, STRING, null, TableTopicConfigValidator.IdColumnsValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_ID_COLUMNS_DOC)
                 .define(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, STRING, null, TableTopicConfigValidator.PartitionValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_PARTITION_BY_DOC)
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_CDC_FIELD_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG, STRING, ErrorsTolerance.INVALID_DATA.name, in(ErrorsTolerance.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_DOC)
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_STATE_DOC)
@@ -401,11 +415,18 @@ public class LogConfig extends AbstractConfig {
     public final boolean tableTopicEnable;
     public final long tableTopicCommitInterval;
     public final String tableTopicNamespace;
+    @Deprecated
     public final TableTopicSchemaType tableTopicSchemaType;
+    public final TableTopicConvertType valueConvertType;
+    public final TableTopicConvertType keyConvertType;
+    public final Map<String, Object> valueSchemaLatestConfig;
+    public final Map<String, Object> keySchemaLatestConfig;
+    public final TableTopicTransformType transformType;
     public final String tableTopicIdColumns;
     public final String tableTopicPartitionBy;
     public final boolean tableTopicUpsertEnable;
     public final String tableTopicCdcField;
+    public final ErrorsTolerance errorsTolerance;
 
     public final String kafkaLinksId;
     public final long kafkaLinksTopicStartTime;
@@ -467,10 +488,16 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
+        this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
+        this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));
+        this.valueSchemaLatestConfig = originalsWithPrefix(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_PREFIX);
+        this.keySchemaLatestConfig = originalsWithPrefix(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_PREFIX);
+        this.transformType = TableTopicTransformType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG));
         this.tableTopicIdColumns = getString(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG);
         this.tableTopicPartitionBy = getString(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG);
         this.tableTopicUpsertEnable = getBoolean(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG);
         this.tableTopicCdcField = getString(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG);
+        this.errorsTolerance = ErrorsTolerance.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG));
 
         this.kafkaLinksId = getString(TopicConfig.KAFKA_LINKS_ID_CONFIG);
         this.kafkaLinksTopicStartTime = getLong(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG);
@@ -754,9 +781,19 @@ public class LogConfig extends AbstractConfig {
 
     // AutoMQ inject start
     public static void validateTableTopicSchemaConfigValues(Properties props, String tableTopicSchemaRegistryUrl) {
-        String schemaType = props.getProperty(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG);
-        if (TableTopicSchemaType.SCHEMA.name.equals(schemaType) && tableTopicSchemaRegistryUrl == null) {
-            throw new InvalidConfigurationException("Table topic schema type is set to SCHEMA but schema registry URL is not configured");
+        String valueConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG);
+        String keyConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG);
+        String transformProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG);
+
+        // Validation logic using new (or mapped) configs
+        if ((BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
+            throw new InvalidConfigurationException("Table topic convert type is set to '" + valueConvertProperty + "' but schema registry URL is not configured");
+        }
+        if ((BY_SCHEMA_ID.name.equals(keyConvertProperty) || BY_LATEST_SCHEMA.name.equals(keyConvertProperty)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
+            throw new InvalidConfigurationException("Table topic convert type is set to '" + keyConvertProperty + "' but schema registry URL is not configured");
+        }
+        if (!(BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && FLATTEN_DEBEZIUM.name.equals(transformProperty)) {
+            throw new InvalidConfigurationException(valueConvertProperty + " convert type cannot be used with '" + FLATTEN_DEBEZIUM.name + "' transform type");
         }
     }
 

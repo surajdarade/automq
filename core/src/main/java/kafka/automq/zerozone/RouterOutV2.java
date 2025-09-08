@@ -37,7 +37,6 @@ import org.apache.kafka.common.utils.Time;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -89,13 +88,11 @@ public class RouterOutV2 {
         short flag = new ZoneRouterProduceRequest.Flag().internalTopicsAllowed(args.internalTopicsAllowed()).value();
         Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> cfList = new ArrayList<>(args.entriesPerPartition().size());
+        long startNanos = time.nanoseconds();
         for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
             TopicPartition tp = entry.getKey();
             MemoryRecords records = entry.getValue();
             Node node = mapping.getRouteOutNode(tp.topic(), tp.partition(), args.clientId());
-            if (node.id() != currentNode.id()) {
-                inboundLimiter.consume(ThrottleStrategy.BYPASS, records.buffer().remaining());
-            }
             if (node.id() == Node.noNode().id()) {
                 responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
                 continue;
@@ -105,9 +102,14 @@ public class RouterOutV2 {
             ZoneRouterProduceRequest zoneRouterProduceRequest = zoneRouterProduceRequest(args, flag, tp, records);
             CompletableFuture<RouterChannel.AppendResult> channelCf = routerChannel.append(node.id(), orderHint, ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest)));
             CompletableFuture<Void> proxyCf = channelCf.thenCompose(channelRst -> {
+                long timeNanos = time.nanoseconds();
+                ZeroZoneMetricsManager.APPEND_CHANNEL_LATENCY.record(timeNanos - startNanos);
                 ProxyRequest proxyRequest = new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(), zoneRouterProduceRequest, recordSize, timeoutMillis);
                 sendProxyRequest(node, proxyRequest);
-                return proxyRequest.cf.thenAccept(response -> responseMap.put(tp, response));
+                return proxyRequest.cf.thenAccept(response -> {
+                    responseMap.put(tp, response);
+                    ZeroZoneMetricsManager.PROXY_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
+                });
             });
             cfList.add(proxyCf);
         }
@@ -127,11 +129,6 @@ public class RouterOutV2 {
         if (node.id() == currentNode.id()) {
             localProxy.send(proxyRequest);
         } else {
-            // - If route the records to local, then S3Stream will consume the inbound traffic.
-            // - If route the records to another node, we need to consume the inbound traffic right here
-            //  and the outbound traffic is consumed by RouterChannel.
-            inboundLimiter.consume(ThrottleStrategy.BYPASS, proxyRequest.recordSize);
-
             Proxy proxy = proxies.computeIfAbsent(node, RemoteProxy::new);
             proxy.send(proxyRequest);
         }
@@ -177,7 +174,7 @@ public class RouterOutV2 {
         }
 
         public synchronized void send(ProxyRequest request) {
-            ZoneRouterMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
+            ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
             synchronized (this) {
                 if (requestBatch == null) {
                     requestBatch = new RequestBatch(time, 1, 8192);

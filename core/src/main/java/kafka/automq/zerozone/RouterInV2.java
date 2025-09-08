@@ -33,6 +33,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
+import org.apache.kafka.common.utils.Time;
 
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -60,6 +61,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private final RouterChannelProvider channelProvider;
     private final ElasticKafkaApis kafkaApis;
     private final String rack;
+    private final RouterInProduceHandler localAppendHandler;
     private RouterInProduceHandler routerInProduceHandler;
     private final Queue<PartitionProduceRequest> unpackLinkQueue = new ConcurrentLinkedQueue<>();
     private final EventLoop[] appendEventLoops;
@@ -70,17 +72,21 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             return RequestLocal.withThreadConfinedCaching();
         }
     };
+    private final Time time;
 
-    public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack) {
+    public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack, Time time) {
         this.channelProvider = channelProvider;
         this.kafkaApis = kafkaApis;
         this.rack = rack;
-        this.routerInProduceHandler = kafkaApis::handleProduceAppendJavaCompatible;
+        this.localAppendHandler = kafkaApis::handleProduceAppendJavaCompatible;
+        this.routerInProduceHandler = this.localAppendHandler;
+        this.time = time;
 
         this.appendEventLoops = new EventLoop[Systems.CPU_CORES];
         for (int i = 0; i < appendEventLoops.length; i++) {
             this.appendEventLoops[i] = new EventLoop("ROUTER_IN_V2_APPEND_" + i);
         }
+
     }
 
     public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request) {
@@ -97,6 +103,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         RouterChannel routerChannel = channelProvider.readOnlyChannel(routerRecord.nodeId());
         List<CompletableFuture<AutomqZoneRouterResponseData.Response>> subResponseList = new ArrayList<>(routerRecord.channelOffsets().size());
         AtomicInteger size = new AtomicInteger(0);
+        long startNanos = time.nanoseconds();
         for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
             partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
@@ -104,15 +111,14 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
                 size.addAndGet(rst.readableBytes());
                 handleUnpackLink();
+                ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
             });
             subResponseList.add(partitionProduceRequest.responseCf);
         }
         return CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0])).thenApply(nil -> {
             AutomqZoneRouterResponseData response = new AutomqZoneRouterResponseData();
             response.setResponses(subResponseList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
-            // - The outbound traffic was consumed by RouterChannel#get
-            // - The inbound traffic was consumed by S3Stream#append
-            ZoneRouterMetricsManager.recordRouterInBytes(routerRecord.nodeId(), size.get());
+            ZeroZoneMetricsManager.recordRouterInBytes(routerRecord.nodeId(), size.get());
             return new AutomqZoneRouterResponse(response);
         });
     }
@@ -128,7 +134,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
                     EventLoop eventLoop = appendEventLoops[Math.abs(req.channelOffset.orderHint() % appendEventLoops.length)];
                     req.unpackLinkCf.thenComposeAsync(buf -> {
                         try (ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0)) {
-                            return append0(req.channelOffset, zoneRouterProduceRequest);
+                            return append0(req.channelOffset, zoneRouterProduceRequest, false);
                         } finally {
                             buf.release();
                         }
@@ -147,6 +153,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             }
         }
     }
+
     @Override
     public CompletableFuture<AutomqZoneRouterResponseData.Response> append(
         ChannelOffset channelOffset,
@@ -155,7 +162,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
         appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() -> {
             try (zoneRouterProduceRequest) {
-                FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest), cf);
+                FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf);
             }
         });
         return cf;
@@ -163,7 +170,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
 
     private CompletableFuture<AutomqZoneRouterResponseData.Response> append0(
         ChannelOffset channelOffset,
-        ZoneRouterProduceRequest zoneRouterProduceRequest
+        ZoneRouterProduceRequest zoneRouterProduceRequest,
+        boolean local
     ) {
         ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
         ProduceRequestData data = zoneRouterProduceRequest.data();
@@ -175,7 +183,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         Map<TopicPartition, MemoryRecords> realEntriesPerPartition = ZeroZoneTrafficInterceptor.produceRequestToMap(data);
         short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        routerInProduceHandler.handleProduceAppend(
+        RouterInProduceHandler handler = local ? localAppendHandler : routerInProduceHandler;
+        handler.handleProduceAppend(
             ProduceRequestArgs.builder()
                 .clientId(buildClientId(realEntriesPerPartition))
                 .timeout(data.timeoutMs())

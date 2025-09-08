@@ -65,6 +65,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroZoneTrafficInterceptor.class);
     private final ElasticKafkaApis kafkaApis;
     private final ClientRackProvider clientRackProvider;
+    private final List<BucketURI> config;
     private final BucketURI bucketURI;
 
     private final ProxyNodeMapping mapping;
@@ -83,6 +84,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     public ZeroZoneTrafficInterceptor(
         RouterChannelProvider routerChannelProvider,
+        ConfirmWALProvider confirmWALProvider,
         ElasticKafkaApis kafkaApis,
         MetadataCache metadataCache,
         ClientRackProvider clientRackProvider,
@@ -108,7 +110,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         AsyncSender asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
 
-        // Zero Zone V0
+        this.config = kafkaConfig.automq().zoneRouterChannels().get();
+
         //noinspection OptionalGetWithoutIsPresent
         this.bucketURI = kafkaConfig.automq().zoneRouterChannels().get().get(0);
         this.clientRackProvider = clientRackProvider;
@@ -120,8 +123,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
 
-        // Zero Zone V1
-        this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get());
+        // Zero Zone V2
+        this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time);
         this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode, routerInV2, asyncSender, time);
         this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerChannelProvider.addEpochListener(committedEpochManager);
@@ -129,7 +132,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         this.version = metadataCache.autoMQVersion();
 
-        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer, kafkaApis.clusterId());
+        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, confirmWALProvider,
+            (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer);
         this.snapshotReadPartitionsManager.setVersion(version);
         replayer.setCacheEventListener(this.snapshotReadPartitionsManager.cacheEventListener());
         mapping.registerListener(snapshotReadPartitionsManager);
@@ -224,7 +228,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     @Override
     public String toString() {
-        return "ObjectProduceRouter{bucketURI=" + bucketURI + '}';
+        return "ZeroZoneTrafficInterceptor{config=" + config + '}';
     }
 
     private void fillRackIfMissing(ClientIdMetadata clientId) {
