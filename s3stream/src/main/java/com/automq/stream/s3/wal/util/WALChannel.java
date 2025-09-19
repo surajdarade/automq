@@ -181,8 +181,14 @@ public interface WALChannel {
         }
 
         public WALChannel build() {
+            long startTime = System.currentTimeMillis();
             String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
+            long endTimeDirectNotAvailableMsg = System.currentTimeMillis();
+            System.out.println("[dio inner] directNotAvailableMsg cost:" + (endTimeDirectNotAvailableMsg - startTime) + "ms");
             boolean isBlockDevice = isBlockDevice(path);
+            long endTimeIsBlockDevice = System.currentTimeMillis();
+            System.out.println("[dio inner] directNotAvailableMsg cost:" + (endTimeIsBlockDevice - endTimeDirectNotAvailableMsg) + "ms");
+
             boolean useDirect = false;
             if (direct != null) {
                 // Set by user.
@@ -204,7 +210,10 @@ public interface WALChannel {
             }
 
             if (useDirect) {
-                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
+                long start1 = System.currentTimeMillis();
+                WALBlockDeviceChannel channel = new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
+                System.out.println("[dio inner] directNotAvailableMsg cost:" + (System.currentTimeMillis() - start1) + "ms");
+                return channel;
             } else {
                 LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}, isBlockDevice: {}, reason: {}",
                     new File(path).getAbsolutePath(), isBlockDevice, directNotAvailableMsg);

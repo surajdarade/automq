@@ -99,8 +99,7 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
             try {
                 throw new RuntimeException(String.format("block size %d is not a multiple of %d, update it by jvm option: -D%s=%d",
                     WALUtil.BLOCK_SIZE, blockSize, WALUtil.BLOCK_SIZE_PROPERTY, blockSize));
-            }
-            catch(Exception e) {
+            } catch (Exception e) {
                 System.out.println("[dio] block size not multiple");
                 e.printStackTrace();
             }
@@ -153,7 +152,9 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     @Override
     public void open(CapacityReader reader) throws IOException {
         if (!isBlockDevice(path)) {
+            long start = System.currentTimeMillis();
             openAndCheckFile();
+            System.out.println("[dio] openAndCheckFile cost: " + (System.currentTimeMillis() - start) + "ms");
         } else {
             try {
                 long capacity = WALUtil.getBlockDeviceCapacity(path);
@@ -193,7 +194,9 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
             if (recoveryMode) {
                 throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode: file not exists. path: " + path);
             }
+            long start = System.currentTimeMillis();
             WALUtil.createFile(path, capacityWant);
+            System.out.println("[dio open inner] createFile cost: " + (System.currentTimeMillis() - start) + "ms");
             capacityFact = capacityWant;
         }
     }
