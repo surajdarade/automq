@@ -1,0 +1,63 @@
+name: Publish AutoMQ Software Chart
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Helm chart version to pull (also used as image tag)
+        required: true
+        default: '5.2.0'
+
+jobs:
+  publish:
+    name: Mirror Helm Chart
+    runs-on: ubuntu-latest
+    env:
+      CHART_NAME: automq-enterprise
+      SOURCE_CHART: oci://automq.azurecr.io/helm/automq-enterprise
+      HELM_DESTINATION: oci://docker.io/automq
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Authenticate to source Helm registry
+        if: ${{ secrets.AZURE_HELM_REGISTRY_USERNAME != '' && secrets.AZURE_HELM_REGISTRY_PASSWORD != '' }}
+        env:
+          HELM_USER: ${{ secrets.AZURE_HELM_REGISTRY_USERNAME }}
+          HELM_PASSWORD: ${{ secrets.AZURE_HELM_REGISTRY_PASSWORD }}
+        run: |
+          echo "$HELM_PASSWORD" | helm registry login automq.azurecr.io --username "$HELM_USER" --password-stdin
+
+      - name: Pull AutoMQ Enterprise chart
+        run: |
+          helm pull "$SOURCE_CHART" --version "${{ inputs.version }}"
+
+      - name: Push chart to Docker Hub OCI registry
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DOCKERHUB_USERNAME" || -z "$DOCKERHUB_TOKEN" ]]; then
+            echo "Docker Hub credentials are required to push Helm chart" >&2
+            exit 1
+          fi
+          chart_archive="$CHART_NAME-$INPUT_VERSION.tgz"
+          if [[ ! -f "$chart_archive" ]]; then
+            echo "Chart archive $chart_archive not found" >&2
+            exit 1
+          fi
+          echo "$DOCKERHUB_TOKEN" | helm registry login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
+          helm push "$chart_archive" "$HELM_DESTINATION"
+          helm registry logout docker.io || true
+
+      - name: Logout from registries
+        if: always()
+        run: |
+          helm registry logout automq.azurecr.io || true
+          helm registry logout docker.io || true
+          rm -f "$CHART_NAME-${{ inputs.version }}.tgz"
