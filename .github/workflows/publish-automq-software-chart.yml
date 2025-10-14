@@ -15,7 +15,7 @@ jobs:
     env:
       CHART_NAME: automq-enterprise
       SOURCE_CHART: oci://automq.azurecr.io/helm/automq-enterprise
-      HELM_DESTINATION: oci://docker.io/automq
+      HELM_DESTINATION: oci://docker.io
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
