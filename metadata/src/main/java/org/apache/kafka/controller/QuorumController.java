@@ -204,6 +204,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Random;
+import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -292,6 +293,7 @@ public final class QuorumController implements Controller {
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
+        private FingerPrintControlManagerV1 fingerPrintControlManager;
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
@@ -458,6 +460,11 @@ public final class QuorumController implements Controller {
             this.extension = extension;
             return this;
         }
+
+        public Builder setFingerPrintControlManager(FingerPrintControlManagerV1 fingerPrintControlManager) {
+            this.fingerPrintControlManager = fingerPrintControlManager;
+            return this;
+        }
         // AutoMQ for Kafka inject end
 
         public Builder setUncleanLeaderElectionCheckIntervalMs(long uncleanLeaderElectionCheckIntervalMs) {
@@ -531,6 +538,7 @@ public final class QuorumController implements Controller {
                     streamClient,
                     quorumVoters,
                     extension,
+                    fingerPrintControlManager,
                     // AutoMQ inject end
                     uncleanLeaderElectionCheckIntervalMs,
                     interBrokerListenerName
@@ -1366,7 +1374,19 @@ public final class QuorumController implements Controller {
             fatalFaultHandler.handleFault("exception while claiming leadership", e);
         }
     }
+    private static FingerPrintControlManagerV1 loadFingerPrintControlManager() {
+        try {
+            ServiceLoader<FingerPrintControlManagerV1> loader =
+                ServiceLoader.load(FingerPrintControlManagerV1.class, QuorumController.class.getClassLoader());
+            for (FingerPrintControlManagerV1 impl : loader) {
+                return impl;
+            }
+        } catch (Throwable ignore) {
 
+        }
+        return null;
+    }
+//nick check-01
     class CompleteActivationEvent implements ControllerWriteOperation<Void> {
         @Override
         public ControllerResult<Void> generateRecordsAndResult() {
@@ -1379,12 +1399,15 @@ public final class QuorumController implements Controller {
                     bootstrapMetadata,
                     featureControl);
                 //v2
-                long now = time.milliseconds();
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                ApiMessageAndVersion fingerPrintRecord = new ApiMessageAndVersion(
-                    new FingerPrintRecord().setMaxNodeCount(5).setCreatedTimestamp(now),
-                    (short) 0);
-                all.add(fingerPrintRecord);
+                if (fingerPrintControlManager != null && !fingerPrintControlManager.exists()) {
+                    long now = time.milliseconds();
+                    ApiMessageAndVersion fingerPrintRecord = new ApiMessageAndVersion(
+                        new FingerPrintRecord().setMaxNodeCount(5).setCreatedTimestamp(now),
+                        (short) 0);
+                    all.add(fingerPrintRecord);
+//                    fingerPrintControlManager.startScheduleCheck();
+                }
                 return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {
                 throw fatalFaultHandler.handleFault("exception while completing controller " +
@@ -1835,6 +1858,11 @@ public final class QuorumController implements Controller {
             case S3_STREAM_END_OFFSETS_RECORD:
                 streamControlManager.replay((S3StreamEndOffsetsRecord) message);
                 break;
+            case FINGER_PRINT_RECORD:
+                if (fingerPrintControlManager != null) {
+                    fingerPrintControlManager.replay((FingerPrintRecord) message);
+                }
+                break;
             default:
                 if (!extensionMatch) {
                     throw new RuntimeException("Unhandled record type " + type);
@@ -2093,8 +2121,10 @@ public final class QuorumController implements Controller {
     private final RouterChannelEpochControlManager routerChannelEpochControlManager;
 
     private final QuorumControllerExtension extension;
+//nick
+    private final FingerPrintControlManagerV1 fingerPrintControlManager;
 
-    private final FingerPrintControlManagerV1 fingerPrintControlManager = null;
+//    private final FingerPrintControlManagerV1 fingerPrintControlManager = loadFingerPrintControlManager();
     // AutoMQ for Kafka inject end
 
 
@@ -2134,6 +2164,7 @@ public final class QuorumController implements Controller {
         StreamClient streamClient,
         List<String> quorumVoters,
         Function<QuorumController, QuorumControllerExtension> extension,
+        FingerPrintControlManagerV1 fingerPrintControlManager,
         // AutoMQ inject end
 
         long uncleanLeaderElectionCheckIntervalMs,
@@ -2267,6 +2298,7 @@ public final class QuorumController implements Controller {
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
         this.extension = extension.apply(this);
+        this.fingerPrintControlManager = fingerPrintControlManager;
 
         // set the nodeControlManager here to avoid circular dependency
         this.replicationControl.setNodeControlManager(nodeControlManager);
@@ -2423,7 +2455,7 @@ public final class QuorumController implements Controller {
         return appendReadEvent("getFinalizedFeatures", context.deadlineNs(),
             () -> featureControl.finalizedFeatures(offsetControl.lastStableOffset()));
     }
-
+//nick chek-02
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> incrementalAlterConfigs(
         ControllerRequestContext context,
@@ -2438,7 +2470,7 @@ public final class QuorumController implements Controller {
         if( null != fingerPrintControlManager ){
             String installId = fingerPrintControlManager.installId();
             if ( installId.isEmpty() ){
-                throw new RuntimeException();
+//                throw new RuntimeException();
             }
             Map<String, String> stringStringMap = configurationControl.clusterConfig();
             fingerPrintControlManager.checkLicense(stringStringMap, installId);
@@ -2556,7 +2588,7 @@ public final class QuorumController implements Controller {
     }
     // AutoMQ for Kafka inject end
 
-
+//nick check-03
     @Override
     public CompletableFuture<BrokerRegistrationReply> registerBroker(
         ControllerRequestContext context,
@@ -2570,7 +2602,7 @@ public final class QuorumController implements Controller {
         if( null != fingerPrintControlManager ){
             String installId = fingerPrintControlManager.installId();
             if (installId.isEmpty()){
-                throw new RuntimeException();
+//                throw new RuntimeException();
             }
             Map<String, String> stringStringMap = configurationControl.clusterConfig();
             fingerPrintControlManager.checkLicense(stringStringMap, installId);
