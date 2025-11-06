@@ -99,6 +99,7 @@ import org.apache.kafka.common.metadata.DelegationTokenRecord;
 import org.apache.kafka.common.metadata.EndTransactionRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.FingerPrintRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
@@ -1370,13 +1371,21 @@ public final class QuorumController implements Controller {
         @Override
         public ControllerResult<Void> generateRecordsAndResult() {
             try {
-                return ActivationRecordsGenerator.generate(
+                ControllerResult<Void> base = ActivationRecordsGenerator.generate(
                     log::warn,
                     logReplayTracker.empty(),
                     offsetControl.transactionStartOffset(),
                     zkMigrationEnabled,
                     bootstrapMetadata,
                     featureControl);
+                //v2
+                long now = time.milliseconds();
+                List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
+                ApiMessageAndVersion fingerPrintRecord = new ApiMessageAndVersion(
+                    new FingerPrintRecord().setMaxNodeCount(5).setCreatedTimestamp(now),
+                    (short) 0);
+                all.add(fingerPrintRecord);
+                return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {
                 throw fatalFaultHandler.handleFault("exception while completing controller " +
                     "activation", t);
@@ -2084,6 +2093,8 @@ public final class QuorumController implements Controller {
     private final RouterChannelEpochControlManager routerChannelEpochControlManager;
 
     private final QuorumControllerExtension extension;
+
+    private final FingerPrintControlManagerV1 fingerPrintControlManager = null;
     // AutoMQ for Kafka inject end
 
 
@@ -2422,6 +2433,18 @@ public final class QuorumController implements Controller {
         if (configChanges.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
+
+        //inject start
+        if( null != fingerPrintControlManager ){
+            String installId = fingerPrintControlManager.installId();
+            if ( installId.isEmpty() ){
+                throw new RuntimeException();
+            }
+            Map<String, String> stringStringMap = configurationControl.clusterConfig();
+            fingerPrintControlManager.checkLicense(stringStringMap, installId);
+        }
+        //inject end
+
         return appendWriteEvent("incrementalAlterConfigs", context.deadlineNs(), () -> {
             ControllerResult<Map<ConfigResource, ApiError>> result =
                 configurationControl.incrementalAlterConfigs(configChanges, false);
@@ -2542,6 +2565,18 @@ public final class QuorumController implements Controller {
         // populate finalized features map with latest known kraft version for validation
         Map<String, Short> controllerFeatures = new HashMap<>(featureControl.finalizedFeatures(Long.MAX_VALUE).featureMap());
         controllerFeatures.put(KRaftVersion.FEATURE_NAME, raftClient.kraftVersion().featureLevel());
+        //v2
+        //inject start
+        if( null != fingerPrintControlManager ){
+            String installId = fingerPrintControlManager.installId();
+            if (installId.isEmpty()){
+                throw new RuntimeException();
+            }
+            Map<String, String> stringStringMap = configurationControl.clusterConfig();
+            fingerPrintControlManager.checkLicense(stringStringMap, installId);
+        }
+        //inject end
+
         return appendWriteEvent("registerBroker", context.deadlineNs(),
             () -> {
                 ControllerResult<BrokerRegistrationReply> result = clusterControl.
