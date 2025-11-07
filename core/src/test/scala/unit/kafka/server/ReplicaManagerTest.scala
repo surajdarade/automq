@@ -6400,7 +6400,8 @@ class ReplicaManagerTest {
       DelegationTokenImage.EMPTY,
       S3StreamsMetadataImage.EMPTY,
       S3ObjectsImage.EMPTY,
-      KVImage.EMPTY
+      KVImage.EMPTY,
+      FingerPrintImage.EMPTY
     )
   }
 

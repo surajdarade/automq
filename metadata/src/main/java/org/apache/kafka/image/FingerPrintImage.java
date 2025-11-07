@@ -78,4 +78,3 @@ public final class FingerPrintImage {
             ", createdTimestamp=" + createdTimestamp + ")";
     }
 }
-

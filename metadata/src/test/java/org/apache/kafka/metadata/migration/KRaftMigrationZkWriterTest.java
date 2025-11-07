@@ -27,6 +27,7 @@ import org.apache.kafka.image.ConfigurationsImage;
 import org.apache.kafka.image.ConfigurationsImageTest;
 import org.apache.kafka.image.DelegationTokenImage;
 import org.apache.kafka.image.FeaturesImage;
+import org.apache.kafka.image.FingerPrintImage;
 import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.MetadataProvenance;
@@ -98,7 +99,8 @@ public class KRaftMigrationZkWriterTest {
             DelegationTokenImage.EMPTY,
             S3StreamsMetadataImage.EMPTY,
             S3ObjectsImage.EMPTY,
-            KVImage.EMPTY);
+            KVImage.EMPTY,
+            FingerPrintImage.EMPTY);
 
         writer.handleSnapshot(image, (opType, opLog, operation) ->
             operation.apply(ZkMigrationLeadershipState.EMPTY)
@@ -140,7 +142,8 @@ public class KRaftMigrationZkWriterTest {
             DelegationTokenImage.EMPTY,
             S3StreamsMetadataImage.EMPTY,
             S3ObjectsImage.EMPTY,
-            KVImage.EMPTY);
+            KVImage.EMPTY,
+            FingerPrintImage.EMPTY);
 
         Map<String, Integer> opCounts = new HashMap<>();
         KRaftMigrationOperationConsumer consumer = KRaftMigrationDriver.countingOperationConsumer(opCounts,
@@ -201,7 +204,8 @@ public class KRaftMigrationZkWriterTest {
             DelegationTokenImage.EMPTY,
             S3StreamsMetadataImage.EMPTY,
             S3ObjectsImage.EMPTY,
-            KVImage.EMPTY);
+            KVImage.EMPTY,
+            FingerPrintImage.EMPTY);
 
         Map<String, Integer> opCounts = new HashMap<>();
         KRaftMigrationOperationConsumer consumer = KRaftMigrationDriver.countingOperationConsumer(opCounts,

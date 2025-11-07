@@ -506,7 +506,8 @@ class DescribeTopicPartitionsRequestHandlerTest {
             image.delegationTokens(),
             image.streamsMetadata(),
             image.objectsMetadata(),
-            image.kv()
+            image.kv(),
+            image.fingerPrint()
         );
         MetadataDelta delta = new MetadataDelta.Builder().setImage(partialImage).build();
         records.stream().forEach(record -> delta.replay(record));

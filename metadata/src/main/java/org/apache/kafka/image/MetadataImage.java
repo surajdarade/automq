@@ -78,6 +78,7 @@ public final class MetadataImage {
     private final FingerPrintImage fingerPrint;
     // AutoMQ for Kafka inject end
 
+    @SuppressWarnings("checkstyle:ParameterNumber")
     public MetadataImage(
         MetadataProvenance provenance,
         FeaturesImage features,

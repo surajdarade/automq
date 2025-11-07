@@ -35,6 +35,7 @@ import org.apache.kafka.image.ClusterImage;
 import org.apache.kafka.image.ConfigurationsImage;
 import org.apache.kafka.image.DelegationTokenImage;
 import org.apache.kafka.image.FeaturesImage;
+import org.apache.kafka.image.FingerPrintImage;
 import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -632,7 +633,8 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY);
+                KVImage.EMPTY,
+                FingerPrintImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -690,7 +692,8 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY);
+                KVImage.EMPTY,
+                FingerPrintImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -748,7 +751,8 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY);
+                KVImage.EMPTY,
+                FingerPrintImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -806,7 +810,8 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY);
+                KVImage.EMPTY,
+                FingerPrintImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -886,7 +891,7 @@ public class KRaftMigrationDriverTest {
             image = delta.apply(provenance);
 
             driver.onControllerChange(new LeaderAndEpoch(OptionalInt.of(3000), 1));
-            
+
             // Call onMetadataUpdate twice. The first call will trigger the migration to begin (due to presence of brokers)
             // Both calls will "wakeup" the driver and cause a PollEvent to be run. Calling these back-to-back effectively
             // causes two MigrateMetadataEvents to be enqueued. Ensure only one is actually run.

@@ -17,8 +17,6 @@
 
 package org.apache.kafka.image;
 
-import java.util.Optional;
-
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -62,6 +60,8 @@ import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
+
+import java.util.Optional;
 
 
 /**

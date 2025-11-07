@@ -43,4 +43,3 @@ public final class FingerPrintDelta {
         return new FingerPrintImage(newMaxNodeCount, newCreatedTimestamp);
     }
 }
-
