@@ -17,6 +17,8 @@
 
 package org.apache.kafka.image;
 
+import java.util.Optional;
+
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -26,6 +28,7 @@ import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.DelegationTokenRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.FingerPrintRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
@@ -59,8 +62,6 @@ import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
-
-import java.util.Optional;
 
 
 /**
@@ -107,6 +108,8 @@ public final class MetadataDelta {
     private S3ObjectsDelta s3ObjectsDelta = null;
 
     private KVDelta kvDelta = null;
+
+    private FingerPrintDelta fingerPrintDelta = null;
     // AutoMQ for Kafka inject end
 
     public MetadataDelta(MetadataImage image) {
@@ -241,6 +244,17 @@ public final class MetadataDelta {
         }
         return kvDelta;
     }
+
+    public FingerPrintDelta fingerPrintDelta() {
+        return fingerPrintDelta;
+    }
+
+    public FingerPrintDelta getOrCreateFingerPrintDelta() {
+        if (fingerPrintDelta == null) {
+            fingerPrintDelta = new FingerPrintDelta(image.fingerPrint());
+        }
+        return fingerPrintDelta;
+    }
     // AutoMQ for Kafka inject end
 
     @SuppressWarnings("checkstyle:javaNCSS")
@@ -369,6 +383,9 @@ public final class MetadataDelta {
                 break;
             case S3_STREAM_END_OFFSETS_RECORD:
                 replay((S3StreamEndOffsetsRecord) record);
+                break;
+            case FINGER_PRINT_RECORD:
+                replay((FingerPrintRecord) record);
                 break;
                 // AutoMQ for Kafka inject end
             default:
@@ -545,6 +562,10 @@ public final class MetadataDelta {
     public void replay(S3StreamEndOffsetsRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
+
+    public void replay(FingerPrintRecord record) {
+        getOrCreateFingerPrintDelta().replay(record);
+    }
     // AutoMQ for Kafka inject end
 
     /**
@@ -611,6 +632,7 @@ public final class MetadataDelta {
         S3StreamsMetadataImage newStreamMetadata = getNewS3StreamsMetadataImage();
         S3ObjectsImage newS3ObjectsMetadata = getNewS3ObjectsMetadataImage();
         KVImage newKVImage = getNewKVImage();
+        FingerPrintImage newFingerPrint = getNewFingerPrintImage();
         // AutoMQ for Kafka inject end
 
         ScramImage newScram;
@@ -638,7 +660,8 @@ public final class MetadataDelta {
             newDelegationTokens,
             newStreamMetadata,
             newS3ObjectsMetadata,
-            newKVImage
+            newKVImage,
+            newFingerPrint
         );
     }
 
@@ -658,6 +681,11 @@ public final class MetadataDelta {
         return kvDelta == null ?
             image.kv() : kvDelta.apply();
     }
+
+    private FingerPrintImage getNewFingerPrintImage() {
+        return fingerPrintDelta == null ?
+            image.fingerPrint() : fingerPrintDelta.apply();
+    }
     // AutoMQ for Kafka inject end
 
     @Override
@@ -675,6 +703,7 @@ public final class MetadataDelta {
             ", streamMetadataDelta=" + s3StreamsMetadataDelta +
             ", objectsMetadataDelta=" + s3ObjectsDelta +
             ", kvDelta=" + kvDelta +
+            ", fingerPrintDelta=" + fingerPrintDelta +
             ')';
     }
 }

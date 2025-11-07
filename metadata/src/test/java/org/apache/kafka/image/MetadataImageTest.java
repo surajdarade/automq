@@ -53,7 +53,8 @@ public class MetadataImageTest {
             DelegationTokenImageTest.IMAGE1,
             S3StreamsMetadataImageTest.IMAGE1,
             S3ObjectsImageTest.IMAGE1,
-            KVImageTest.IMAGE1);
+            KVImageTest.IMAGE1,
+            FingerPrintImage.EMPTY);
 
         DELTA1 = new MetadataDelta.Builder().
                 setImage(IMAGE1).
@@ -84,7 +85,8 @@ public class MetadataImageTest {
             DelegationTokenImageTest.IMAGE2,
             S3StreamsMetadataImageTest.IMAGE2,
             S3ObjectsImageTest.IMAGE2,
-            KVImageTest.IMAGE2);
+            KVImageTest.IMAGE2,
+            FingerPrintImage.EMPTY);
     }
 
     @Test

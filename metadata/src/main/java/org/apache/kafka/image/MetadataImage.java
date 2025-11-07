@@ -44,7 +44,8 @@ public final class MetadataImage {
         DelegationTokenImage.EMPTY,
         S3StreamsMetadataImage.EMPTY,
         S3ObjectsImage.EMPTY,
-        KVImage.EMPTY);
+        KVImage.EMPTY,
+        FingerPrintImage.EMPTY);
 
     private final MetadataProvenance provenance;
 
@@ -73,6 +74,8 @@ public final class MetadataImage {
     private final S3ObjectsImage objectsMetadata;
 
     private final KVImage kv;
+
+    private final FingerPrintImage fingerPrint;
     // AutoMQ for Kafka inject end
 
     public MetadataImage(
@@ -88,7 +91,8 @@ public final class MetadataImage {
         DelegationTokenImage delegationTokens,
         S3StreamsMetadataImage streamMetadata,
         S3ObjectsImage s3ObjectsImage,
-        KVImage kvImage
+        KVImage kvImage,
+        FingerPrintImage fingerPrint
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -103,6 +107,7 @@ public final class MetadataImage {
         this.streamMetadata = streamMetadata;
         this.objectsMetadata = s3ObjectsImage;
         this.kv = kvImage;
+        this.fingerPrint = fingerPrint;
     }
 
     public boolean isEmpty() {
@@ -117,7 +122,8 @@ public final class MetadataImage {
             delegationTokens.isEmpty() &&
             streamMetadata.isEmpty() &&
             objectsMetadata.isEmpty() &&
-            kv.isEmpty();
+            kv.isEmpty() &&
+            fingerPrint.isEmpty();
     }
 
     public MetadataProvenance provenance() {
@@ -180,6 +186,10 @@ public final class MetadataImage {
     public KVImage kv() {
         return kv;
     }
+
+    public FingerPrintImage fingerPrint() {
+        return fingerPrint;
+    }
     // AutoMQ for Kafka inject end
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
@@ -198,6 +208,7 @@ public final class MetadataImage {
         streamMetadata.write(writer, options);
         objectsMetadata.write(writer, options);
         kv.write(writer, options);
+        fingerPrint.write(writer, options);
         // AutoMQ for Kafka inject end
         writer.close(true);
     }
@@ -218,7 +229,8 @@ public final class MetadataImage {
             delegationTokens.equals(other.delegationTokens) &&
             streamMetadata.equals(other.streamMetadata) &&
             objectsMetadata.equals(other.objectsMetadata) &&
-            kv.equals(other.kv);
+            kv.equals(other.kv) &&
+            fingerPrint.equals(other.fingerPrint);
     }
 
     @Override
@@ -236,7 +248,8 @@ public final class MetadataImage {
             delegationTokens,
             streamMetadata,
             objectsMetadata,
-            kv);
+            kv,
+            fingerPrint);
     }
 
     @Override
