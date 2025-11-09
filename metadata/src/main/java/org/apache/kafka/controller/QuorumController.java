@@ -143,8 +143,6 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
-import static org.apache.kafka.controller.QuorumController.ControllerOperationFlag.DOES_NOT_UPDATE_QUEUE_TIME;
-import static org.apache.kafka.controller.QuorumController.ControllerOperationFlag.RUNS_IN_PREMIGRATION;
 import org.apache.kafka.controller.errors.ControllerExceptions;
 import org.apache.kafka.controller.errors.EventHandlerExceptionInfo;
 import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
@@ -1687,7 +1685,7 @@ public final class QuorumController implements Controller {
      * @param snapshotId        The snapshotId if this record is from a snapshot
      * @param offset            The offset of the record
      */
-    @SuppressWarnings("checkstyle:javaNCSS")
+    @SuppressWarnings({"checkstyle:javaNCSS", "checkstyle:MethodLength"})
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long offset) {
         if (log.isTraceEnabled()) {
             if (snapshotId.isPresent()) {
