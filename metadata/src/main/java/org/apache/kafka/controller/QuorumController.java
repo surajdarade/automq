@@ -1843,9 +1843,12 @@ public final class QuorumController implements Controller {
                 streamControlManager.replay((S3StreamEndOffsetsRecord) message);
                 break;
             case FINGER_PRINT_RECORD:
+                log.info("Finger print record: {}", message);
                 if (fingerPrintControlManager != null) {
+                    log.info("fingerPrintControlManager is not null");
                     fingerPrintControlManager.replay((FingerPrintRecord) message);
                 }
+                log.info("fingerPrintControlManager is null");
                 break;
             default:
                 if (!extensionMatch) {
