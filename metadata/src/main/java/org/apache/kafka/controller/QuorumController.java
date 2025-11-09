@@ -204,7 +204,6 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Random;
-import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -293,7 +292,6 @@ public final class QuorumController implements Controller {
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
-        private FingerPrintControlManagerV1 fingerPrintControlManager;
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
@@ -460,11 +458,6 @@ public final class QuorumController implements Controller {
             this.extension = extension;
             return this;
         }
-
-        public Builder setFingerPrintControlManager(FingerPrintControlManagerV1 fingerPrintControlManager) {
-            this.fingerPrintControlManager = fingerPrintControlManager;
-            return this;
-        }
         // AutoMQ for Kafka inject end
 
         public Builder setUncleanLeaderElectionCheckIntervalMs(long uncleanLeaderElectionCheckIntervalMs) {
@@ -538,7 +531,6 @@ public final class QuorumController implements Controller {
                     streamClient,
                     quorumVoters,
                     extension,
-                    fingerPrintControlManager,
                     // AutoMQ inject end
                     uncleanLeaderElectionCheckIntervalMs,
                     interBrokerListenerName
@@ -1374,20 +1366,7 @@ public final class QuorumController implements Controller {
             fatalFaultHandler.handleFault("exception while claiming leadership", e);
         }
     }
-    private FingerPrintControlManagerV1 loadFingerPrintControlManager() {
-        try {
-            log.info("loadFingerPrintControlManager excuted");
-            ServiceLoader<FingerPrintControlManagerV1> loader =
-                ServiceLoader.load(FingerPrintControlManagerV1.class, QuorumController.class.getClassLoader());
-            for (FingerPrintControlManagerV1 impl : loader) {
-                log.info("FingerPrintControlManagerV1 successful loaded : " + impl.getClass().getName());
-                return impl;
-            }
-        } catch (Throwable ignore) {
-            log.info("loadFingerPrintControlManager error");
-        }
-        return null;
-    }
+
 //nick check-01
     class CompleteActivationEvent implements ControllerWriteOperation<Void> {
         @Override
@@ -1403,13 +1382,15 @@ public final class QuorumController implements Controller {
                 //v2
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
 //                if (fingerPrintControlManager != null) {
-                if (fingerPrintControlManager != null && !fingerPrintControlManager.recordExists()) {
-                    long now = time.milliseconds();
-                    ApiMessageAndVersion fingerPrintRecord = new ApiMessageAndVersion(
-                        new FingerPrintRecord().setMaxNodeCount(5).setCreatedTimestamp(now),
-                        (short) 0);
-                    all.add(fingerPrintRecord);
-//                    fingerPrintControlManager.startScheduleCheck();
+                if (fingerPrintControlManager != null) {
+                    fingerPrintControlManager.startScheduleCheck();
+                    if (!fingerPrintControlManager.recordExists()) {
+                        long now = time.milliseconds();
+                        ApiMessageAndVersion fingerPrintRecord = new ApiMessageAndVersion(
+                            new FingerPrintRecord().setMaxNodeCount(5).setCreatedTimestamp(now),
+                            (short) 0);
+                        all.add(fingerPrintRecord);
+                    }
                 }
                 log.info("Active Controller elected complete");
                 return ControllerResult.atomicOf(all, null);
@@ -1863,7 +1844,7 @@ public final class QuorumController implements Controller {
                 break;
             case FINGER_PRINT_RECORD:
                 if (fingerPrintControlManager != null) {
-//                    fingerPrintControlManager.replay((FingerPrintRecord) message);
+                    fingerPrintControlManager.replay((FingerPrintRecord) message);
                 }
                 break;
             default:
@@ -2167,7 +2148,6 @@ public final class QuorumController implements Controller {
         StreamClient streamClient,
         List<String> quorumVoters,
         Function<QuorumController, QuorumControllerExtension> extension,
-        FingerPrintControlManagerV1 fingerPrintControlManager,
         // AutoMQ inject end
 
         long uncleanLeaderElectionCheckIntervalMs,
@@ -2301,7 +2281,10 @@ public final class QuorumController implements Controller {
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
         this.extension = extension.apply(this);
-        this.fingerPrintControlManager = loadFingerPrintControlManager();
+        this.fingerPrintControlManager = QuorumControllerExtension.loadService(
+            FingerPrintControlManagerV1.class,
+            QuorumController.class.getClassLoader()
+        );
 
         // set the nodeControlManager here to avoid circular dependency
         this.replicationControl.setNodeControlManager(nodeControlManager);
@@ -2478,9 +2461,9 @@ public final class QuorumController implements Controller {
                 log.info("installId in incrementalAlterConfigs got null");
 //                throw new RuntimeException();
             }
-            Map<String, String> configMap = configurationControl.clusterConfig();
             log.info("incrementalAlterConfigs automq check license excuted");
-            fingerPrintControlManager.checkLicense(configMap, installId);
+            fingerPrintControlManager.updateDynamicConfig(configChanges);
+            fingerPrintControlManager.checkLicense();
         }
         //inject end
 
@@ -2612,8 +2595,7 @@ public final class QuorumController implements Controller {
             if (installId.isEmpty()) {
 //                throw new RuntimeException();
             }
-            Map<String, String> stringStringMap = configurationControl.clusterConfig();
-            fingerPrintControlManager.checkLicense(stringStringMap, installId);
+            fingerPrintControlManager.checkLicense();
         }
         //inject end
 

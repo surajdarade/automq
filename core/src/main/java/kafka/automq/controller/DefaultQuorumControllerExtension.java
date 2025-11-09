@@ -21,9 +21,11 @@ package kafka.automq.controller;
 
 import kafka.automq.failover.FailoverControlManager;
 
+import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.controller.FingerPrintControlManagerV1;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.QuorumControllerExtension;
 import org.apache.kafka.raft.OffsetAndEpoch;
@@ -33,6 +35,7 @@ import java.util.Optional;
 
 public class DefaultQuorumControllerExtension implements QuorumControllerExtension {
     private final FailoverControlManager failoverControlManager;
+    private final FingerPrintControlManagerV1 fingerPrintControlManager;
 
     public DefaultQuorumControllerExtension(QuorumController controller) {
         this.failoverControlManager = new FailoverControlManager(
@@ -42,6 +45,10 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
             controller.nodeControlManager(),
             controller.streamControlManager()
         );
+        this.fingerPrintControlManager = QuorumControllerExtension.loadService(
+            FingerPrintControlManagerV1.class,
+            QuorumController.class.getClassLoader()
+        );
     }
 
     @Override
@@ -49,6 +56,8 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
         long batchLastOffset) {
         if (Objects.requireNonNull(type) == MetadataRecordType.KVRECORD) {
             failoverControlManager.replay((KVRecord) message);
+        } else if (Objects.requireNonNull(type) == MetadataRecordType.CONFIG_RECORD && fingerPrintControlManager != null) {
+            fingerPrintControlManager.replayLicenseConfig((ConfigRecord) message);
         } else {
             return false;
         }
