@@ -77,8 +77,7 @@ object MetadataCacheTest {
           image.delegationTokens(),
           image.streamsMetadata(),
           image.objectsMetadata(),
-          image.kv(),
-          image.fingerPrint())
+          image.kv())
         val delta = new MetadataDelta.Builder().setImage(partialImage).build()
 
         def toRecord(broker: UpdateMetadataBroker): RegisterBrokerRecord = {

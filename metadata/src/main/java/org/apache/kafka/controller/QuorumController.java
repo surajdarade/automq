@@ -99,7 +99,6 @@ import org.apache.kafka.common.metadata.DelegationTokenRecord;
 import org.apache.kafka.common.metadata.EndTransactionRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
-import org.apache.kafka.common.metadata.FingerPrintRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
@@ -1843,6 +1842,10 @@ public final class QuorumController implements Controller {
                 topicDeletionManager.replay(record);
                 nodeControlManager.replay(record);
                 routerChannelEpochControlManager.replay(record);
+                if (fingerPrintControlManager != null) {
+                    log.info("fingerPrintControlManager is not null");
+                    fingerPrintControlManager.replay(record);
+                }
                 break;
             }
             case REMOVE_KVRECORD: {
@@ -1858,14 +1861,6 @@ public final class QuorumController implements Controller {
                 break;
             case S3_STREAM_END_OFFSETS_RECORD:
                 streamControlManager.replay((S3StreamEndOffsetsRecord) message);
-                break;
-            case FINGER_PRINT_RECORD:
-                log.info("Finger print record: {}", message);
-                if (fingerPrintControlManager != null) {
-                    log.info("fingerPrintControlManager is not null");
-                    fingerPrintControlManager.replay((FingerPrintRecord) message);
-                }
-                log.info("fingerPrintControlManager is null");
                 break;
             default:
                 if (!extensionMatch) {
@@ -2153,17 +2148,12 @@ public final class QuorumController implements Controller {
         try {
             log.info("loadFingerPrintControlManager executed");
             ClassLoader classLoader = QuorumController.class.getClassLoader();
-            log.info("Using ClassLoader: {}", classLoader);
-            log.info("ClassLoader class: {}", classLoader != null ? classLoader.getClass().getName() : "null");
 
             ServiceLoader<FingerPrintControlManagerV1> loader =
                 ServiceLoader.load(FingerPrintControlManagerV1.class, classLoader);
             log.info("ServiceLoader created for: {}", FingerPrintControlManagerV1.class.getName());
 
-            // 使用显式的 Iterator，这样可以捕获 ServiceConfigurationError
             Iterator<FingerPrintControlManagerV1> iterator = loader.iterator();
-            log.info("Got iterator from ServiceLoader");
-
             int count = 0;
             while (iterator.hasNext()) {
                 count++;
@@ -2173,13 +2163,11 @@ public final class QuorumController implements Controller {
                         count, impl.getClass().getName());
                     return impl;
                 } catch (ServiceConfigurationError e) {
-                    // ServiceConfigurationError 在 iterator.next() 时抛出
                     log.error("ServiceConfigurationError loading implementation #{}: {}",
                         count, e.getMessage(), e);
                     if (e.getCause() != null) {
                         log.error("Caused by: {}", e.getCause().getMessage(), e.getCause());
                     }
-                    // 继续尝试下一个
                     continue;
                 }
             }
@@ -2371,11 +2359,6 @@ public final class QuorumController implements Controller {
         this.extension = extension.apply(this);
         this.fingerPrintControlManager = loadFingerPrintControlManager();
 
-//        this.fingerPrintControlManager = QuorumControllerExtension.loadService(
-//            FingerPrintControlManagerV1.class,
-//            QuorumController.class.getClassLoader()
-//        );
-
 
         // set the nodeControlManager here to avoid circular dependency
         this.replicationControl.setNodeControlManager(nodeControlManager);
@@ -2546,12 +2529,6 @@ public final class QuorumController implements Controller {
 
         //inject start
         if (null != fingerPrintControlManager) {
-            log.info("incrementalAlterConfigs automq inject excuted");
-            String installId = fingerPrintControlManager.installId();
-            if (installId.isEmpty()) {
-                log.info("installId in incrementalAlterConfigs got null");
-//                throw new RuntimeException();
-            }
             log.info("incrementalAlterConfigs automq check license excuted");
             fingerPrintControlManager.updateDynamicConfig(configChanges);
             fingerPrintControlManager.checkLicense();
@@ -2710,10 +2687,6 @@ public final class QuorumController implements Controller {
         //v2
         //inject start
         if (null != fingerPrintControlManager) {
-//            String installId = fingerPrintControlManager.installId();
-//            if (installId.isEmpty()) {
-////                throw new RuntimeException();
-//            }
             fingerPrintControlManager.checkLicense();
         }
         //inject end

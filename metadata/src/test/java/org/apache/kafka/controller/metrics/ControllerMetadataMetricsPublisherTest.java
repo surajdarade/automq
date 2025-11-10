@@ -24,7 +24,6 @@ import org.apache.kafka.image.ClusterImage;
 import org.apache.kafka.image.ConfigurationsImage;
 import org.apache.kafka.image.DelegationTokenImage;
 import org.apache.kafka.image.FeaturesImage;
-import org.apache.kafka.image.FingerPrintImage;
 import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -96,8 +95,7 @@ public class ControllerMetadataMetricsPublisherTest {
             DelegationTokenImage.EMPTY,
             S3StreamsMetadataImage.EMPTY,
             S3ObjectsImage.EMPTY,
-            KVImage.EMPTY,
-            FingerPrintImage.EMPTY);
+            KVImage.EMPTY);
     }
 
     static final TopicsImage TOPICS_IMAGE1;

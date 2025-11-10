@@ -35,7 +35,6 @@ import org.apache.kafka.image.ClusterImage;
 import org.apache.kafka.image.ConfigurationsImage;
 import org.apache.kafka.image.DelegationTokenImage;
 import org.apache.kafka.image.FeaturesImage;
-import org.apache.kafka.image.FingerPrintImage;
 import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -633,8 +632,7 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY,
-                FingerPrintImage.EMPTY);
+                KVImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -692,8 +690,7 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY,
-                FingerPrintImage.EMPTY);
+                KVImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -751,8 +748,7 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY,
-                FingerPrintImage.EMPTY);
+                KVImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
@@ -810,8 +806,7 @@ public class KRaftMigrationDriverTest {
                 DelegationTokenImage.EMPTY,
                 S3StreamsMetadataImage.EMPTY,
                 S3ObjectsImage.EMPTY,
-                KVImage.EMPTY,
-                FingerPrintImage.EMPTY);
+                KVImage.EMPTY);
             MetadataDelta delta = new MetadataDelta(image);
 
             startAndWaitForRecoveringMigrationStateFromZK(driver);
