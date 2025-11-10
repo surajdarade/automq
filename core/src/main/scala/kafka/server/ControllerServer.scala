@@ -40,7 +40,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.LogContext
 import org.apache.kafka.common.{ClusterResource, Endpoint, Reconfigurable, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
-import org.apache.kafka.controller.{FingerPrintControlManagerV1, QuorumController, QuorumControllerExtension, QuorumFeatures}
+import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
 import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
@@ -136,13 +136,11 @@ class ControllerServer(
 
   var autoBalancerManager: AutoBalancerService = _
 
-  var fingerPrintControlManagerV1: FingerPrintControlManagerV1 = _
 
   protected def buildAutoBalancerManager: AutoBalancerService = {
     new AutoBalancerManager(time, config.props, controller, raftManager.client)
   }
 
-  protected def buildFingerPrintControlManagerV1: FingerPrintControlManagerV1 = null
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()
@@ -246,7 +244,6 @@ class ControllerServer(
         }
       }
 
-      fingerPrintControlManagerV1 = buildFingerPrintControlManagerV1
 
       val controllerBuilder = {
         val leaderImbalanceCheckIntervalNs = if (config.autoLeaderRebalanceEnable) {
@@ -299,7 +296,6 @@ class ControllerServer(
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer()).
-          setFingerPrintControlManager(fingerPrintControlManagerV1).
           // AutoMQ inject end
           setUncleanLeaderElectionCheckIntervalMs(config.uncleanLeaderElectionCheckIntervalMs).
           setInterBrokerListenerName(config.interBrokerListenerName.value()).

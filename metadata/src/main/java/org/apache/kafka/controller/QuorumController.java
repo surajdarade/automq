@@ -191,8 +191,10 @@ import org.apache.kafka.timeline.SnapshotRegistry;
 
 import org.slf4j.Logger;
 
+import java.nio.ByteBuffer;
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -217,6 +219,8 @@ import java.util.stream.Collectors;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static org.apache.kafka.controller.FingerPrintControlManagerV1.NODE_COUNT_KEY;
+import static org.apache.kafka.controller.FingerPrintControlManagerV1.TIME_KEY;
 import static org.apache.kafka.controller.QuorumController.ControllerOperationFlag.DOES_NOT_UPDATE_QUEUE_TIME;
 import static org.apache.kafka.controller.QuorumController.ControllerOperationFlag.RUNS_IN_PREMIGRATION;
 
@@ -295,7 +299,6 @@ public final class QuorumController implements Controller {
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
-        private FingerPrintControlManagerV1 fingerPrintControlManager;
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
@@ -359,11 +362,6 @@ public final class QuorumController implements Controller {
 
         public Builder setReplicaPlacer(ReplicaPlacer replicaPlacer) {
             this.replicaPlacer = replicaPlacer;
-            return this;
-        }
-
-        public Builder setFingerPrintControlManager(FingerPrintControlManagerV1 fingerPrintControlManager) {
-            this.fingerPrintControlManager = fingerPrintControlManager;
             return this;
         }
 
@@ -540,7 +538,6 @@ public final class QuorumController implements Controller {
                     streamClient,
                     quorumVoters,
                     extension,
-                    fingerPrintControlManager,
                     // AutoMQ inject end
                     uncleanLeaderElectionCheckIntervalMs,
                     interBrokerListenerName
@@ -1391,16 +1388,25 @@ public final class QuorumController implements Controller {
                     featureControl);
                 //v2
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-//                if (fingerPrintControlManager != null) {
                 if (fingerPrintControlManager != null) {
                     fingerPrintControlManager.startScheduleCheck();
                     if (!fingerPrintControlManager.recordExists()) {
                         log.info("start writing fingerprint records");
                         long now = time.milliseconds();
-                        ApiMessageAndVersion fingerPrintRecord = new ApiMessageAndVersion(
-                            new FingerPrintRecord().setMaxNodeCount(5).setCreatedTimestamp(now),
-                            (short) 0);
-                        all.add(fingerPrintRecord);
+                        byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
+                            .putLong(now)
+                            .array();
+                        int maxNodeCount = 5;
+                        byte[] nodeCountBytes = ByteBuffer.allocate(Integer.BYTES)
+                            .putInt(maxNodeCount)
+                            .array();
+
+                        KVRecord record = new KVRecord().setKeyValues(Arrays.asList(
+                            new KVRecord.KeyValue().setKey(TIME_KEY).setValue(timestampBytes),
+                            new KVRecord.KeyValue().setKey(NODE_COUNT_KEY).setValue(nodeCountBytes)
+                        ));
+                        ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
+                        all.add(fingerPrint);
                     }
                 }
                 log.info("Active Controller elected complete, fingerPrintControlManager is {}", fingerPrintControlManager);
@@ -2230,7 +2236,6 @@ public final class QuorumController implements Controller {
         StreamClient streamClient,
         List<String> quorumVoters,
         Function<QuorumController, QuorumControllerExtension> extension,
-        FingerPrintControlManagerV1 fingerPrintControlManager,
         // AutoMQ inject end
 
         long uncleanLeaderElectionCheckIntervalMs,
@@ -2589,7 +2594,7 @@ public final class QuorumController implements Controller {
             () -> replicationControl.listPartitionReassignments(request.topics(),
                 offsetControl.lastStableOffset()));
     }
-
+//nick
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> legacyAlterConfigs(
         ControllerRequestContext context,
@@ -2705,10 +2710,10 @@ public final class QuorumController implements Controller {
         //v2
         //inject start
         if (null != fingerPrintControlManager) {
-            String installId = fingerPrintControlManager.installId();
-            if (installId.isEmpty()) {
-//                throw new RuntimeException();
-            }
+//            String installId = fingerPrintControlManager.installId();
+//            if (installId.isEmpty()) {
+////                throw new RuntimeException();
+//            }
             fingerPrintControlManager.checkLicense();
         }
         //inject end

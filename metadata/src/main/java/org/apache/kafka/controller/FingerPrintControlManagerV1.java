@@ -10,6 +10,9 @@ import java.util.Map;
 
 
 public interface FingerPrintControlManagerV1  extends Reconfigurable {
+    String TIME_KEY = "createdTimestamp";
+    String NODE_COUNT_KEY = "maxNodeCount";
+
     String installId();
 
     boolean checkLicense();
