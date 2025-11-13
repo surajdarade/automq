@@ -33,6 +33,7 @@ import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.controller.FingerPrintControlManagerV1
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -91,6 +92,7 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
+  private val fingerPrintControlManagerV1: FingerPrintControlManagerV1 = FingerPrintControlManagerProvider.get();
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -471,7 +473,12 @@ class ElasticKafkaApis(
     val clientId = request.header.clientId
     val fetchRequest = request.body[FetchRequest]
     // If broker-level consumer fetch is disabled, reject client (non-follower) fetch requests.
-    if (!fetchRequest.isFromFollower && quotas.broker.isFetchDisabled) {
+//    if (!fetchRequest.isFromFollower && quotas.broker.isFetchDisabled) {
+//      logger.info("Consumer is not allowed to fetch data due to license!");
+//      requestHelper.sendMaybeThrottle(request, fetchRequest.getErrorResponse(Errors.POLICY_VIOLATION.exception))
+//      return
+//    }
+    if (!fetchRequest.isFromFollower && !fingerPrintControlManagerV1.checkLicense()) {
       logger.info("Consumer is not allowed to fetch data due to license!");
       requestHelper.sendMaybeThrottle(request, fetchRequest.getErrorResponse(Errors.POLICY_VIOLATION.exception))
       return

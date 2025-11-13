@@ -20,6 +20,7 @@
 package kafka.automq.controller;
 
 import kafka.automq.failover.FailoverControlManager;
+import kafka.server.streamaspect.FingerPrintControlManagerProvider;
 
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.KVRecord;
@@ -45,10 +46,9 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
             controller.nodeControlManager(),
             controller.streamControlManager()
         );
-        this.fingerPrintControlManager = QuorumControllerExtension.loadService(
-            FingerPrintControlManagerV1.class,
-            QuorumController.class.getClassLoader()
-        );
+//        this.fingerPrintControlManager = FingerPrintControlManagerProvider
+//            .getAndInitialize(controller, controller.clusterControl());
+        this.fingerPrintControlManager = FingerPrintControlManagerProvider.get();
     }
 
     @Override

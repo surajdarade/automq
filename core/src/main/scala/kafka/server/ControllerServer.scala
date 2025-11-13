@@ -30,7 +30,7 @@ import kafka.server.QuotaFactory.QuotaManagers
 
 import scala.collection.immutable
 import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
-import kafka.server.streamaspect.ElasticControllerApis
+import kafka.server.streamaspect.{ElasticControllerApis, FingerPrintControlManagerProvider}
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -40,7 +40,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.LogContext
 import org.apache.kafka.common.{ClusterResource, Endpoint, Reconfigurable, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
-import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
+import org.apache.kafka.controller.{FingerPrintControlManagerV1, QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
 import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
@@ -135,6 +135,7 @@ class ControllerServer(
   @volatile var registrationChannelManager: NodeToControllerChannelManager = _
 
   var autoBalancerManager: AutoBalancerService = _
+  @volatile var fingerPrintControlManager: FingerPrintControlManagerV1 = _
 
 
   protected def buildAutoBalancerManager: AutoBalancerService = {
@@ -187,6 +188,7 @@ class ControllerServer(
       registrationsPublisher = new ControllerRegistrationsPublisher()
 
       incarnationId = Uuid.randomUuid()
+      fingerPrintControlManager = FingerPrintControlManagerProvider.get()
 
       val apiVersionManager = new SimpleApiVersionManager(
         ListenerType.CONTROLLER,
@@ -296,12 +298,15 @@ class ControllerServer(
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer()).
+          setFingerPrintControlManager(fingerPrintControlManager).
           // AutoMQ inject end
           setUncleanLeaderElectionCheckIntervalMs(config.uncleanLeaderElectionCheckIntervalMs).
           setInterBrokerListenerName(config.interBrokerListenerName.value()).
           setEligibleLeaderReplicasEnabled(config.elrEnabled)
       }
       controller = controllerBuilder.build()
+      fingerPrintControlManager = FingerPrintControlManagerProvider.get()
+//      fingerPrintControlManager = FingerPrintControlManagerProvider.getAndInitialize(controller, controller.clusterControl())
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.
