@@ -3,8 +3,8 @@ package org.apache.kafka.controller;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigResource;
-import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.KVRecord;
+import org.apache.kafka.common.protocol.ApiMessage;
 
 import java.util.Map;
 
@@ -22,7 +22,7 @@ public interface FingerPrintControlManagerV1  extends Reconfigurable {
 //
     boolean replay(KVRecord record);
 
-    boolean replayLicenseConfig(ConfigRecord record);
+    boolean replayLicenseConfig(ApiMessage record);
 //
     boolean recordExists();
 

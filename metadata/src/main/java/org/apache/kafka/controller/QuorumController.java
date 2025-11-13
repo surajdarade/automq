@@ -1719,8 +1719,11 @@ public final class QuorumController implements Controller {
         logReplayTracker.replay(message);
         MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
         // AutoMQ for Kafka inject start
+        if (fingerPrintControlManager != null) {
+            fingerPrintControlManager.replayLicenseConfig(message);
+        }
         boolean extensionMatch = extension.replay(type, message, snapshotId, offset);
-        // AutoMQ for Kafka inject end
+        // AutoMQ for Kafka inject end nick
         switch (type) {
             case REGISTER_BROKER_RECORD:
                 clusterControl.replay((RegisterBrokerRecord) message, offset);
@@ -1848,7 +1851,6 @@ public final class QuorumController implements Controller {
                 nodeControlManager.replay(record);
                 routerChannelEpochControlManager.replay(record);
                 if (fingerPrintControlManager != null) {
-                    log.info("fingerPrintControlManager is not null");
                     fingerPrintControlManager.replay(record);
                 }
                 break;

@@ -600,7 +600,7 @@ class ControllerServer(
   def reconfigurables(): java.util.List[Reconfigurable] = {
     java.util.List.of(
       autoBalancerManager,
-//      fingerPrintControlManagerV1
+      fingerPrintControlManager
     )
   }
   // AutoMQ for Kafka inject end
