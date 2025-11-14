@@ -29,4 +29,8 @@ public interface FingerPrintControlManagerV1  extends Reconfigurable {
     boolean updateDynamicConfig(Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges);
 
     boolean legacyUpdateDynamicConfig(Map<ConfigResource, Map<String, String>> newConfigs);
+
+    boolean checkClusterNodesAndMayFence();
+
+    boolean isActiveBrokerCountWithinLimit();
 }

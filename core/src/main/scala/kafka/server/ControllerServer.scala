@@ -305,8 +305,8 @@ class ControllerServer(
           setEligibleLeaderReplicasEnabled(config.elrEnabled)
       }
       controller = controllerBuilder.build()
-      fingerPrintControlManager = FingerPrintControlManagerProvider.get()
-//      fingerPrintControlManager = FingerPrintControlManagerProvider.getAndInitialize(controller, controller.clusterControl())
+//      fingerPrintControlManager = FingerPrintControlManagerProvider.get()
+      fingerPrintControlManager = FingerPrintControlManagerProvider.getAndInitialize(controller, controller.clusterControl())
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.

@@ -23,7 +23,7 @@ import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultLinkRecordDecoder, DefaultRouterChannelProvider, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -33,7 +33,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, PartitionLifecycleListener}
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FingerPrintControlManagerProvider, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -43,6 +43,7 @@ import org.apache.kafka.common.security.scram.internals.ScramMechanism
 import org.apache.kafka.common.security.token.delegation.internals.DelegationTokenCache
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
+import org.apache.kafka.controller.FingerPrintControlManagerV1
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.group.{CoordinatorRecord, CoordinatorRecordSerde, GroupCoordinator, GroupCoordinatorService}
 import org.apache.kafka.image.publisher.{BrokerRegistrationTracker, MetadataPublisher}
@@ -174,6 +175,8 @@ class BrokerServer(
   config.addReconfigurable(clientRackProvider)
 
   var tableManager: TableManager = _
+
+  val fingerPrintControlManagerV1: FingerPrintControlManagerV1 = FingerPrintControlManagerProvider.get()
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -199,6 +202,7 @@ class BrokerServer(
 
   override def startup(): Unit = {
     if (!maybeChangeStatus(SHUTDOWN, STARTING)) return
+    if (!fingerPrintControlManagerV1.isActiveBrokerCountWithinLimit) return
     val startupDeadline = Deadline.fromDelay(time, config.serverMaxStartupTimeMs, TimeUnit.MILLISECONDS)
     try {
       sharedServer.startForBroker()
