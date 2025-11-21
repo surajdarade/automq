@@ -1377,7 +1377,7 @@ public final class QuorumController implements Controller {
         }
     }
 
-//nick check-01
+//nick01 check-01
     class CompleteActivationEvent implements ControllerWriteOperation<Void> {
         @Override
         public ControllerResult<Void> generateRecordsAndResult() {
@@ -1392,16 +1392,11 @@ public final class QuorumController implements Controller {
                 //v2
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
                 if (fpcManager != null) {
-//                    fingerPrintControlManager.startScheduleCheck();
                     if (!fpcManager.recordExists()) {
                         log.info("start writing fingerprint records");
                         long now = time.milliseconds();
                         byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
                             .putLong(now)
-                            .array();
-                        int maxNodeCount = 5;
-                        byte[] nodeCountBytes = ByteBuffer.allocate(Integer.BYTES)
-                            .putInt(maxNodeCount)
                             .array();
 
                         KVRecord record = new KVRecord().setKeyValues(Arrays.asList(
@@ -2457,7 +2452,7 @@ public final class QuorumController implements Controller {
         return appendReadEvent("getFinalizedFeatures", context.deadlineNs(),
             () -> featureControl.finalizedFeatures(offsetControl.lastStableOffset()));
     }
-//nick chek-02
+
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> incrementalAlterConfigs(
         ControllerRequestContext context,
@@ -2468,14 +2463,6 @@ public final class QuorumController implements Controller {
         if (configChanges.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
-
-        //inject start
-        if (null != fpcManager) {
-            log.info("incrementalAlterConfigs automq check license excuted");
-            fpcManager.updateDynamicConfig(configChanges);
-            fpcManager.checkLicense();
-        }
-        //inject end
 
         return appendWriteEvent("incrementalAlterConfigs", context.deadlineNs(), () -> {
             ControllerResult<Map<ConfigResource, ApiError>> result =
@@ -2513,7 +2500,7 @@ public final class QuorumController implements Controller {
             () -> replicationControl.listPartitionReassignments(request.topics(),
                 offsetControl.lastStableOffset()));
     }
-//nick
+//nickalter
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> legacyAlterConfigs(
         ControllerRequestContext context,
@@ -2608,7 +2595,7 @@ public final class QuorumController implements Controller {
     }
     // AutoMQ for Kafka inject end
 
-//nick check-03
+//nickregister check-03
     @Override
     public CompletableFuture<BrokerRegistrationReply> registerBroker(
         ControllerRequestContext context,

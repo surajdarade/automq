@@ -600,7 +600,7 @@ class ControllerServer(
   def reconfigurables(): java.util.List[Reconfigurable] = {
     java.util.List.of(
       autoBalancerManager,
-      fpcManager
+//      fpcManager
     )
   }
   // AutoMQ for Kafka inject end

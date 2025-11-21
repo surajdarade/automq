@@ -58,8 +58,6 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     QuotaType.SlowFetch.toString, quotaLimit(QuotaType.SlowFetch)
   ))
 
-  def isFetchDisabled: Boolean = config.fetchDisabled()
-
   def getMaxValueInQuotaWindow(quotaType: QuotaType, request: RequestChannel.Request): Double = {
     if (shouldThrottle(request)) {
       quotaLimit(quotaType)

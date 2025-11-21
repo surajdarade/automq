@@ -1,6 +1,5 @@
 package org.apache.kafka.controller;
 
-import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.metadata.KVRecord;
@@ -23,8 +22,6 @@ public interface FPCManager extends Reconfigurable {
     boolean replayLicenseConfig(ApiMessage record);
 
     boolean recordExists();
-
-    boolean updateDynamicConfig(Map<ConfigResource, Map<String, Map.Entry<AlterConfigOp.OpType, String>>> configChanges);
 
     boolean legacyUpdateDynamicConfig(Map<ConfigResource, Map<String, String>> newConfigs);
 }
