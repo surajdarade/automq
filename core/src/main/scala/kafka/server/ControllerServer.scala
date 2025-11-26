@@ -28,7 +28,7 @@ import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata._
-import kafka.server.streamaspect.ElasticControllerApis
+import kafka.server.streamaspect.{ElasticControllerApis, FingerPrintControlManagerProvider}
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
