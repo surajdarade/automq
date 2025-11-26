@@ -1,5 +1,24 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package kafka.automq.table.process.convert;
 
+import kafka.automq.table.binder.RecordBinder;
 import kafka.automq.table.deserializer.proto.CustomProtobufSchema;
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
 import kafka.automq.table.deserializer.proto.parse.ProtobufSchemaParser;
@@ -9,6 +28,7 @@ import kafka.automq.table.process.ConversionResult;
 
 import org.apache.kafka.common.utils.ByteUtils;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
@@ -16,10 +36,21 @@ import com.google.protobuf.Timestamp;
 import com.squareup.wire.schema.internal.parser.ProtoFileElement;
 import com.squareup.wire.schema.internal.parser.ProtoParser;
 
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.avro.AvroSchemaUtil;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.data.Record;
+import org.apache.iceberg.inmemory.InMemoryCatalog;
+import org.apache.iceberg.io.TaskWriter;
+import org.apache.iceberg.types.Type;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -29,7 +60,9 @@ import java.util.stream.Collectors;
 
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 
+import static kafka.automq.table.binder.AvroRecordBinderTypeTest.createTableWriter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 @Tag("S3Unit")
@@ -37,21 +70,29 @@ public class ProtobufRegistryConverterTest {
 
     private static final String ALL_TYPES_PROTO = """
         syntax = \"proto3\";
-        
+
         package kafka.automq.table.process.proto;
-        
+
         import \"google/protobuf/timestamp.proto\";
-        
+
         message Nested {
             string name = 1;
             int32 count = 2;
         }
-        
+
         enum SampleEnum {
             SAMPLE_ENUM_UNSPECIFIED = 0;
             SAMPLE_ENUM_SECOND = 1;
         }
-        
+
+        message FloatArray {
+            repeated double values = 1;
+        }
+
+        message StringArray {
+            repeated string values = 1;
+        }
+
         message AllTypes {
             // Scalar primitives in order defined by Avro ProtobufData mapping
             bool f_bool = 1;
@@ -79,11 +120,37 @@ public class ProtobufRegistryConverterTest {
             oneof choice {
                 string choice_str = 22;
                 int32 choice_int = 23;
+                FloatArray choice_float_array = 26;
+                StringArray choice_string_array = 27;
             }
             repeated Nested f_nested_list = 24;
             map<string, Nested> f_string_nested_map = 25;
         }
         """;
+
+    private static final String MAP_ONLY_PROTO = """
+        syntax = \"proto3\";
+
+        package kafka.automq.table.process.proto;
+
+        message MapOnly {
+            map<string, int32> attributes = 1;
+        }
+        """;
+
+    private void testSendRecord(org.apache.iceberg.Schema schema, org.apache.iceberg.data.Record record) {
+        InMemoryCatalog catalog = new InMemoryCatalog();
+        catalog.initialize("test", ImmutableMap.of());
+        catalog.createNamespace(Namespace.of("default"));
+        String tableName = "test";
+        Table table = catalog.createTable(TableIdentifier.of(Namespace.of("default"), tableName), schema);
+        TaskWriter<org.apache.iceberg.data.Record> writer = createTableWriter(table);
+        try {
+            writer.write(record);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     @Test
     void testConvertAllPrimitiveAndCollectionTypes() throws Exception {
@@ -108,7 +175,7 @@ public class ProtobufRegistryConverterTest {
 
         DynamicMessage message = buildAllTypesMessage(descriptor);
         // magic byte + schema id + single message index + serialized protobuf payload
-        ByteBuffer payload = buildConfluentPayload(schemaId, message.toByteArray(), 1);
+        ByteBuffer payload = buildConfluentPayload(schemaId, message.toByteArray(), 3);
 
         ProtobufRegistryConverter converter = new ProtobufRegistryConverter(registryClient, "http://mock:8081", false);
 
@@ -121,6 +188,11 @@ public class ProtobufRegistryConverterTest {
         assertPrimitiveFields(record);
         assertRepeatedAndMapFields(record);
         assertNestedAndTimestamp(record);
+
+        org.apache.iceberg.Schema iceberg = AvroSchemaUtil.toIceberg(record.getSchema());
+        RecordBinder recordBinder = new RecordBinder(iceberg, record.getSchema());
+        Record bind = recordBinder.bind(record);
+        testSendRecord(iceberg, bind);
     }
 
     private static DynamicMessage buildAllTypesMessage(Descriptors.Descriptor descriptor) {
@@ -145,7 +217,16 @@ public class ProtobufRegistryConverterTest {
             descriptor.findFieldByName("f_enum"),
             descriptor.getFile().findEnumTypeByName("SampleEnum").findValueByName("SAMPLE_ENUM_SECOND")
         );
-        builder.setField(descriptor.findFieldByName("choice_str"), "choice-string");
+
+        // Build FloatArray for oneof choice
+        Descriptors.FieldDescriptor floatArrayField = descriptor.findFieldByName("choice_float_array");
+        Descriptors.Descriptor floatArrayDescriptor = floatArrayField.getMessageType();
+        DynamicMessage.Builder floatArrayBuilder = DynamicMessage.newBuilder(floatArrayDescriptor);
+        Descriptors.FieldDescriptor floatValuesField = floatArrayDescriptor.findFieldByName("values");
+        floatArrayBuilder.addRepeatedField(floatValuesField, 1.1);
+        floatArrayBuilder.addRepeatedField(floatValuesField, 2.2);
+        floatArrayBuilder.addRepeatedField(floatValuesField, 3.3);
+        builder.setField(floatArrayField, floatArrayBuilder.build());
 
         Descriptors.FieldDescriptor nestedField = descriptor.findFieldByName("f_message");
         Descriptors.Descriptor nestedDescriptor = nestedField.getMessageType();
@@ -181,6 +262,63 @@ public class ProtobufRegistryConverterTest {
         Timestamp timestamp = Timestamp.newBuilder().setSeconds(1_234_567_890L).setNanos(987_000_000).build();
         builder.setField(descriptor.findFieldByName("f_timestamp"), timestamp);
 
+        return builder.build();
+    }
+
+    @Test
+    void testConvertStandaloneMapField() throws Exception {
+        String topic = "pb-map-only";
+        String subject = topic + "-value";
+
+        MockSchemaRegistryClient registryClient = new MockSchemaRegistryClient(List.of(new ProtobufSchemaProvider()));
+        CustomProtobufSchema schema = new CustomProtobufSchema(
+            "MapOnly",
+            -1,
+            null,
+            null,
+            MAP_ONLY_PROTO,
+            List.of(),
+            Map.of()
+        );
+        int schemaId = registryClient.register(subject, schema);
+
+        ProtoFileElement fileElement = ProtoParser.Companion.parse(ProtoConstants.DEFAULT_LOCATION, MAP_ONLY_PROTO);
+        DynamicSchema dynamicSchema = ProtobufSchemaParser.toDynamicSchema("MapOnly", fileElement, Collections.emptyMap());
+        Descriptors.Descriptor descriptor = dynamicSchema.getMessageDescriptor("MapOnly");
+
+        DynamicMessage message = buildMapOnlyMessage(descriptor);
+        ByteBuffer payload = buildConfluentPayload(schemaId, message.toByteArray(), 0);
+
+        ProtobufRegistryConverter converter = new ProtobufRegistryConverter(registryClient, "http://mock:8081", false);
+        ConversionResult result = converter.convert(topic, payload.asReadOnlyBuffer());
+
+        GenericRecord record = (GenericRecord) result.getValue();
+        List<?> attributeEntries = (List<?>) record.get("attributes");
+        Map<String, Integer> attributes = attributeEntries.stream()
+            .map(GenericRecord.class::cast)
+            .collect(Collectors.toMap(
+                entry -> entry.get("key").toString(),
+                entry -> (Integer) entry.get("value")
+            ));
+
+        assertEquals(Map.of("env", 1, "tier", 2), attributes);
+
+        Schema.Field attributesField = record.getSchema().getField("attributes");
+        Schema mapSchema = attributesField.schema();
+        assertNotNull(mapSchema.getLogicalType(), "Map field should have logical type");
+        assertEquals("map", mapSchema.getLogicalType().getName());
+        assertEquals(GenericData.Array.class, record.get("attributes").getClass());
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(record.getSchema());
+        assertEquals(Type.TypeID.MAP, icebergSchema.findField("attributes").type().typeId());
+    }
+
+    private static DynamicMessage buildMapOnlyMessage(Descriptors.Descriptor descriptor) {
+        DynamicMessage.Builder builder = DynamicMessage.newBuilder(descriptor);
+        Descriptors.FieldDescriptor mapField = descriptor.findFieldByName("attributes");
+        Descriptors.Descriptor entryDescriptor = mapField.getMessageType();
+        builder.addRepeatedField(mapField, mapEntry(entryDescriptor, "env", 1));
+        builder.addRepeatedField(mapField, mapEntry(entryDescriptor, "tier", 2));
         return builder.build();
     }
 
@@ -286,8 +424,14 @@ public class ProtobufRegistryConverterTest {
         // Optional field should fall back to proto3 default (empty string)
         assertEquals("", getField(record, "f_optional_string", "fOptionalString").toString());
 
-        Object oneofValue = getField(record, "choice_str", "choiceStr");
-        assertEquals("choice-string", oneofValue.toString());
+        // Verify oneof with complex FloatArray type
+        GenericRecord floatArrayValue = (GenericRecord) getField(record, "choice_float_array", "floatArray");
+        List<?> floatValues = (List<?>) floatArrayValue.get("values");
+        List<Double> expectedFloats = List.of(1.1, 2.2, 3.3);
+        assertEquals(expectedFloats.size(), floatValues.size());
+        for (int i = 0; i < expectedFloats.size(); i++) {
+            assertEquals(expectedFloats.get(i), (Double) floatValues.get(i), 1e-6);
+        }
     }
 
     private static Object getField(GenericRecord record, String... candidateNames) {

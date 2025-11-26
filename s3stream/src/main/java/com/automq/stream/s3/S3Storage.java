@@ -48,8 +48,10 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.ExceptionUtil;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.threads.EventLoop;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -89,7 +91,6 @@ import java.util.stream.IntStream;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
-import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
@@ -152,6 +153,9 @@ public class S3Storage implements Storage {
      * @see #handleAppendCallback
      */
     private final Lock[] streamCallbackLocks = IntStream.range(0, NUM_STREAM_CALLBACK_LOCKS).mapToObj(i -> new ReentrantLock()).toArray(Lock[]::new);
+    private final EventLoop[] callbackExecutors = IntStream.range(0, Systems.CPU_CORES).mapToObj(i -> new EventLoop("AUTOMQ_S3STREAM_APPEND_CALLBACK-" + i))
+        .toArray(EventLoop[]::new);
+
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
 
@@ -172,7 +176,12 @@ public class S3Storage implements Storage {
         } else {
             delayTrim = new DelayTrim(0);
         }
-        this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        // Adjust the walUploadThreshold to be less than 2/5 of deltaWALCacheSize to avoid the upload speed being slower than the append speed.
+        long walUploadThreadhold = Math.min(deltaWALCacheSize * 2 / 5, config.walUploadThreshold());
+        if (walUploadThreadhold != config.walUploadThreshold()) {
+            LOGGER.info("The configured walUploadThreshold {} is too large, adjust to {}", config.walUploadThreshold(), walUploadThreadhold);
+        }
+        this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreadhold, config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
@@ -531,6 +540,9 @@ public class S3Storage implements Storage {
             backgroundExecutor.shutdownNow();
             LOGGER.warn("await backgroundExecutor close fail", e);
         }
+        for (EventLoop executor : callbackExecutors) {
+            executor.shutdownGracefully();
+        }
     }
 
     @Override
@@ -808,7 +820,15 @@ public class S3Storage implements Storage {
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
-        suppress(() -> handleAppendCallback0(request), LOGGER);
+        // parallel execute append callback in streamId based executor.
+        EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
+        executor.execute(() -> {
+            try {
+                handleAppendCallback0(request);
+            } catch (Throwable e) {
+                LOGGER.error("[UNEXPECTED], handle append callback fail, request {}", request, e);
+            }
+        });
     }
 
     private void handleAppendCallback0(WalWriteRequest request) {
@@ -820,7 +840,6 @@ public class S3Storage implements Storage {
             // cache block is full, trigger WAL upload.
             uploadDeltaWAL();
         }
-        // TODO: parallel callback
         request.cf.complete(null);
         StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
     }
@@ -916,10 +935,10 @@ public class S3Storage implements Storage {
         // calculate upload rate
         long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
         double rate;
-        if (context.force || elapsed <= 100L || config.snapshotReadEnable()) {
+        if (context.force || elapsed <= 100L) {
             rate = Long.MAX_VALUE;
         } else {
-            rate = context.cache.size() * 1000.0 / Math.min(5000L, elapsed);
+            rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);
             if (rate > maxDataWriteRate) {
                 maxDataWriteRate = rate;
             }

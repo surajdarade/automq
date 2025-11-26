@@ -35,7 +35,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class NetworkStats {
-    private static volatile NetworkStats instance = null;
+    private static final NetworkStats INSTANCE = new NetworkStats();
     // <StreamId, <FastReadBytes, SlowReadBytes>>
     private final Map<Long, Pair<Counter, Counter>> streamReadBytesStats = new ConcurrentHashMap<>();
     private final Counter networkInboundUsageTotal = new Counter();
@@ -49,20 +49,20 @@ public class NetworkStats {
     }
 
     public static NetworkStats getInstance() {
-        if (instance == null) {
-            synchronized (NetworkStats.class) {
-                if (instance == null) {
-                    instance = new NetworkStats();
-                }
-            }
-        }
-        return instance;
+        return INSTANCE;
     }
 
     public CounterMetric networkUsageTotalStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
-        return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
-                ? networkInboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy, networkInboundUsageTotal::inc))
-                : networkOutboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy, networkOutboundUsageTotal::inc));
+        Map<ThrottleStrategy, CounterMetric> stats = type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageTotalStats : networkOutboundUsageTotalStats;
+        CounterMetric metric = stats.get(strategy);
+        if (metric == null) {
+            if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
+                metric = stats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy, networkInboundUsageTotal::inc));
+            } else {
+                metric = stats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy, networkOutboundUsageTotal::inc));
+            }
+        }
+        return metric;
     }
 
     public Optional<Counter> fastReadBytesStats(long streamId) {
@@ -96,8 +96,18 @@ public class NetworkStats {
     }
 
     public HistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
-        return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
-                ? networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy))
-                : networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+        HistogramMetric metric;
+        if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
+            metric = networkInboundLimiterQueueTimeStatsMap.get(strategy);
+            if (metric == null) {
+                metric = networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+            }
+        } else {
+            metric = networkOutboundLimiterQueueTimeStatsMap.get(strategy);
+            if (metric == null) {
+                metric = networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+            }
+        }
+        return metric;
     }
 }

@@ -27,10 +27,8 @@ import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.QuotaFactory.QuotaManagers
-
-import scala.collection.immutable
-import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
-import kafka.server.streamaspect.{ElasticControllerApis, FingerPrintControlManagerProvider}
+import kafka.server.metadata._
+import kafka.server.streamaspect.ElasticControllerApis
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -42,28 +40,29 @@ import org.apache.kafka.common.{ClusterResource, Endpoint, Reconfigurable, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
 import org.apache.kafka.controller.{FPCManager, QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
-import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
 import org.apache.kafka.metadata.placement.{ReplicaPlacer, StripedReplicaPlacer}
 import org.apache.kafka.metadata.publisher.FeaturesPublisher
+import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.security.{CredentialProvider, PasswordEncoder}
 import org.apache.kafka.server.NodeToControllerChannelManager
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.config.ConfigType
+import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics, LinuxIoMetricsCollector}
 import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerServerInfo}
 import org.apache.kafka.server.policy.{AlterConfigPolicy, CreateTopicPolicy}
 import org.apache.kafka.server.util.{Deadline, FutureUtils}
 
 import java.util
-import java.util.{Optional, OptionalLong, Random}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{CompletableFuture, TimeUnit}
+import java.util.{Optional, OptionalLong, Random}
+import scala.collection.immutable
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
 
@@ -141,7 +140,6 @@ class ControllerServer(
   protected def buildAutoBalancerManager: AutoBalancerService = {
     new AutoBalancerManager(time, config.props, controller, raftManager.client)
   }
-
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()
@@ -245,7 +243,6 @@ class ControllerServer(
           null
         }
       }
-
 
       val controllerBuilder = {
         val leaderImbalanceCheckIntervalNs = if (config.autoLeaderRebalanceEnable) {
@@ -546,8 +543,9 @@ class ControllerServer(
       if (socketServer != null)
         CoreUtils.swallow(socketServer.stopProcessingRequests(), this)
       migrationSupport.foreach(_.shutdown(this))
-      if (controller != null)
+      if (controller != null) {
         controller.beginShutdown()
+      }
       if (socketServer != null)
         CoreUtils.swallow(socketServer.shutdown(), this)
       if (controllerApisHandlerPool != null)
@@ -599,8 +597,7 @@ class ControllerServer(
   // return a list of all reconfigurable objects
   def reconfigurables(): java.util.List[Reconfigurable] = {
     java.util.List.of(
-      autoBalancerManager,
-//      fpcManager
+      autoBalancerManager
     )
   }
   // AutoMQ for Kafka inject end
